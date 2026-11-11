@@ -1,0 +1,13 @@
+{
+  "name": "matchpoint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jeu de match-3 à combos et combats, jouable sur iPhone (PWA sans dépendance).",
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "start:lan": "node tools/serve.mjs --lan",
+    "test": "node --test",
+    "icons": "node tools/make-icons.mjs"
+  }
+}

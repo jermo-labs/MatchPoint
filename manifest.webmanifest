@@ -1,0 +1,19 @@
+{
+  "name": "MatchPoint",
+  "short_name": "MatchPoint",
+  "description": "Match-3 à combos : aligne les symboles, enchaîne avant la fin du chrono et lance tes héros à l'assaut des monstres.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#140f2d",
+  "theme_color": "#140f2d",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

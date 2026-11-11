@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>MatchPoint</title>
+<meta name="description" content="Match-3 à combos : aligne les symboles, enchaîne avant la fin du chrono et lance tes héros à l'assaut des monstres.">
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#140f2d">
+
+<!-- Installation sur l'écran d'accueil de l'iPhone (plein écran) -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="MatchPoint">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- Pictogrammes des tuiles et de l'interface -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="g-sword" viewBox="0 0 24 24">
+      <path d="M21.5 2.5v3.2L10.2 17 7 13.8 18.3 2.5z"/>
+      <path d="M5.2 11.6l7.2 7.2-1.6 1.6-7.2-7.2z"/>
+      <path d="M7 15.4l1.6 1.6L5 20.6a1.13 1.13 0 0 1-1.6-1.6z"/>
+    </symbol>
+    <symbol id="g-bow" viewBox="0 0 24 24">
+      <path d="M5 19L16.5 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M21.5 2.5l-1.2 8.3-7.1-7.1z"/>
+      <path d="M3.4 17L7 20.6M5.9 14.5l3.6 3.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="g-magic" viewBox="0 0 24 24">
+      <path d="M12 2c.8 6 4 9.200 10 10-6 .8-9.200 4-10 10-.8-6-4-9.200-10-10 6-.8 9.200-4 10-10z"/>
+    </symbol>
+    <symbol id="g-shield" viewBox="0 0 24 24">
+      <path d="M12 2.500l8 3v6c0 5-3.400 8.500-8 10.300-4.600-1.800-8-5.300-8-10.300v-6z"/>
+    </symbol>
+    <symbol id="g-heart" viewBox="0 0 24 24">
+      <path d="M12 20.800C5.400 15.600 2.600 12.300 2.600 8.700a4.900 4.900 0 0 1 9.400-2 4.900 4.900 0 0 1 9.400 2c0 3.600-2.800 6.900-9.400 12.100z"/>
+    </symbol>
+    <symbol id="g-coin" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 2.600a6.400 6.400 0 1 1 0 12.800 6.400 6.400 0 0 1 0-12.800z"/>
+      <path d="M12 8.600l3.400 3.400-3.400 3.400L8.600 12z"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M12 2.500a9.500 9.500 0 1 0 0 19 9.500 9.500 0 0 0 0-19zm1.200 4.500h-2.400v6l4.600 2.800 1.200-2-3.400-2z"/>
+    </symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24">
+      <path d="M6.500 4.500h4v15h-4zM13.500 4.500h4v15h-4z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<main id="app">
+
+  <!-- Accueil -->
+  <section id="home" class="screen">
+    <header class="home-head">
+      <h1>Match<span>Point</span></h1>
+      <div class="purse" aria-label="Pièces"><svg class="ico"><use href="#g-coin"/></svg><b id="home-coins">0</b></div>
+    </header>
+
+    <div class="level-pick">
+      <button id="lvl-prev" class="round" aria-label="Niveau précédent">‹</button>
+      <div class="level-card">
+        <small>Niveau</small>
+        <strong id="lvl-num">1</strong>
+        <span id="lvl-info"></span>
+      </div>
+      <button id="lvl-next" class="round" aria-label="Niveau suivant">›</button>
+    </div>
+    <button id="btn-play" class="cta">Jouer</button>
+
+    <h2>Tes héros</h2>
+    <div id="hero-list" class="hero-list"></div>
+
+    <footer class="home-foot">
+      <button id="btn-help" class="link">Comment jouer</button>
+      <button id="btn-sound" class="link"></button>
+      <button id="btn-reset" class="link">Réinitialiser</button>
+    </footer>
+  </section>
+
+  <!-- Partie -->
+  <section id="game" class="screen" hidden>
+    <header class="hud">
+      <button id="btn-pause" class="round" aria-label="Pause"><svg class="ico"><use href="#i-pause"/></svg></button>
+      <div class="hud-title"><b id="hud-level"></b><span id="hud-wave"></span></div>
+      <div class="purse"><svg class="ico"><use href="#g-coin"/></svg><b id="hud-coins">0</b></div>
+    </header>
+
+    <div id="enemies" class="enemies"></div>
+
+    <div class="team" id="team">
+      <div class="hpbar"><i id="hp-fill"></i><span id="hp-text"></span></div>
+      <div class="armor" id="armor"><svg class="ico"><use href="#g-shield"/></svg><b id="armor-num">0</b></div>
+    </div>
+
+    <div class="combo" id="combo">
+      <span id="combo-label"></span>
+      <div class="combo-bar"><i id="combo-fill"></i></div>
+    </div>
+
+    <div id="board-wrap"><div id="board"></div></div>
+
+    <div id="chips" class="chips"></div>
+    <div id="toast" class="toast" hidden></div>
+  </section>
+</main>
+
+<div id="modal" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div id="modal-actions" class="modal-actions"></div>
+  </div>
+</div>
+
+<div id="fx" aria-hidden="true"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
