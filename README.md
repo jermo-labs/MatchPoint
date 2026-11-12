@@ -47,13 +47,22 @@ et ouvrir dans Safari l'adresse « réseau local » affichée dans le terminal.
 
 ## Installer sur l'iPhone
 
-Une fois le dossier publié sur un hébergement **HTTPS** (GitHub Pages, Netlify,
-Cloudflare Pages… — le dossier se dépose tel quel) : ouvrir l'adresse dans
-Safari, puis Partager → « Sur l'écran d'accueil ». Le jeu se lance alors en plein
-écran et fonctionne hors-ligne.
+Le jeu est publié sur <https://jermo-labs.github.io/MatchPoint/>. Ouvrir cette
+adresse dans Safari, puis Partager → « Sur l'écran d'accueil ». Le jeu se lance
+alors en plein écran et fonctionne hors-ligne.
 
 Après une mise à jour publiée, la nouvelle version s'affiche au deuxième
 lancement (le premier la télécharge en arrière-plan).
+
+## Publication
+
+Chaque push sur `main` déclenche le workflow
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) : il lance les tests
+du moteur, puis publie sur GitHub Pages uniquement les fichiers du jeu
+(`index.html`, `css/`, `js/`, `icons/`, manifeste et service worker). Si les
+tests échouent, rien n'est publié.
+
+Réglage requis sur le dépôt : Settings → Pages → Source : « GitHub Actions ».
 
 ## Tests
 
