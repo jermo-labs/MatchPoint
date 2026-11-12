@@ -180,17 +180,30 @@ export const enemyAtkScale = (n) => Math.pow(ATK_GROWTH, n - 1);
 /* Part de l'armure conservée d'un tour au suivant. */
 export const ARMOR_KEEP = 0.5;
 
-function scaled(template, n) {
-  const hp = Math.round(template.hp * enemyHpScale(n));
-  const atk = Math.round(template.atk * enemyAtkScale(n));
+/* Niveaux de difficulté : un multiplicateur appliqué aux PV et à l'attaque des
+   ennemis. « Normal » ne change rien ; « Difficile » revient à affronter des
+   ennemis venus de 4 à 5 niveaux plus loin, « Facile » de 4 à 5 niveaux plus
+   tôt. Les vagues et les récompenses sont les mêmes. */
+export const DIFFICULTIES = {
+  easy:   { name: "Facile",    scale: 0.7, hint: "Ennemis à 70 % de leurs PV et de leur attaque." },
+  normal: { name: "Normal",    scale: 1,   hint: "La difficulté de référence." },
+  hard:   { name: "Difficile", scale: 1.4, hint: "Ennemis à 140 % de leurs PV et de leur attaque." },
+};
+export const DEFAULT_DIFFICULTY = "normal";
+
+function scaled(template, n, scale) {
+  const hp = Math.max(1, Math.round(template.hp * enemyHpScale(n) * scale));
+  const atk = Math.max(1, Math.round(template.atk * enemyAtkScale(n) * scale));
   // Pas de tour de répit : la première attaque tombe après le délai normal.
   return { ...template, hp, atk, first: template.cd };
 }
 
-/* Niveau n (à partir de 1) → { waves: [[ennemi…]…], reward, boss, zone }.
+/* Niveau n (à partir de 1) → { waves: [[ennemi…]…], reward, boss, zone },
+   pour une difficulté donnée (clé de DIFFICULTIES).
    Le boss de la zone clôt son 5e niveau. Les monstres d'une zone se dévoilent
    peu à peu : 3 au premier niveau, 4 au deuxième, tous ensuite. */
-export function buildLevel(n) {
+export function buildLevel(n, difficulty = DEFAULT_DIFFICULTY) {
+  const { scale } = DIFFICULTIES[difficulty] ?? DIFFICULTIES[DEFAULT_DIFFICULTY];
   const rng = mulberry32(n * 7919);
   const { zone, step } = zoneOf(n);
   const isBoss = step === ZONE_LEVELS - 1;
@@ -201,8 +214,8 @@ export function buildLevel(n) {
   for (let w = 0; w < waveCount; w++) {
     if (isBoss && w === waveCount - 1) {
       const boss = zone.boss;
-      const wave = [scaled(boss, n)];
-      if (n >= 10) wave.unshift(scaled(pool[Math.floor(rng() * pool.length)], n));
+      const wave = [scaled(boss, n, scale)];
+      if (n >= 10) wave.unshift(scaled(pool[Math.floor(rng() * pool.length)], n, scale));
       waves.push(wave);
       continue;
     }
@@ -211,7 +224,7 @@ export function buildLevel(n) {
     if (n >= 6 && rng() < 0.3) count += 1;
     const wave = [];
     for (let k = 0; k < Math.min(3, count); k++) {
-      wave.push(scaled(pool[Math.floor(rng() * pool.length)], n));
+      wave.push(scaled(pool[Math.floor(rng() * pool.length)], n, scale));
     }
     waves.push(wave);
   }

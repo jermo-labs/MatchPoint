@@ -34,7 +34,13 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
   tuile peut aussi être échangée avec une voisine en coin. Les alignements
   restent en ligne ou en colonne.
 - Touche un ennemi pour le cibler. Son compteur indique dans combien de tours il
-  attaque. Chaque niveau enchaîne plusieurs vagues.
+  attaque. Chaque niveau enchaîne plusieurs vagues. En fin de niveau, le
+  résultat rappelle le temps de jeu (pauses exclues).
+- Depuis l'accueil, les flèches ‹ › changent de niveau un par un, « » par bonds
+  de 5, parmi les niveaux déjà ouverts.
+- Difficulté (Paramètres) : Facile, Normal ou Difficile. Les ennemis ont 70 %,
+  100 % ou 140 % de leurs PV et de leur attaque ; les vagues et les récompenses
+  ne changent pas. En pleine partie, le changement s'applique à la suivante.
 - Le monde compte 8 zones de 5 niveaux (Forêt, Marais, Crypte, Désert, Rivage,
   Montagne, Volcan, Citadelle), chacune avec ses 5 monstres et son boss au
   5e niveau. Après la Citadelle, on repart de la Forêt avec des ennemis plus

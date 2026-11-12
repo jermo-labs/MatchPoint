@@ -17,7 +17,9 @@ import {
   lockGroups, lockedPoints, clearLocked, collapse, findMove, shuffle, isAdjacent,
   comboMultiplier, COMBO_BONUS,
 } from "./engine.js";
-import { HEROES, heroPower, upgradeCost, teamMaxHp, buildLevel, ARMOR_KEEP } from "./data.js";
+import {
+  HEROES, heroPower, upgradeCost, teamMaxHp, buildLevel, ARMOR_KEEP, DIFFICULTIES, DEFAULT_DIFFICULTY,
+} from "./data.js";
 import {
   ABILITIES, isEnraged, hitEnemy, thornsOf, hurtTeam, upkeep, strike, tickPoison, comboTimeFactor,
 } from "./abilities.js";
@@ -35,6 +37,16 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const icon = (name) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#${name}"/></svg>`;
 const gem = (type) => `<div class="gem" data-type="${type}">${icon("g-" + type)}</div>`;
 const fmt = (n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+/* Durée lisible : « 42 s », « 3 min 05 s », « 1 h 02 min ». */
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const min = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n) => String(n).padStart(2, "0");
+  if (h) return `${h} h ${two(min)} min`;
+  return min ? `${min} min ${two(s)} s` : `${s} s`;
+}
 
 /* ── Sauvegarde ──────────────────────────────────────────────────────── */
 
@@ -45,6 +57,7 @@ const freshSave = () => ({
   heroes: Object.fromEntries(TYPES.map((t) => [t, 1])),
   sound: true,
   diagonal: false, // option : autoriser les échanges avec une voisine en coin
+  difficulty: DEFAULT_DIFFICULTY, // clé de DIFFICULTIES
   seenHelp: false,
 });
 
@@ -52,7 +65,9 @@ function loadSave() {
   try {
     const raw = JSON.parse(localStorage.getItem(SAVE_KEY)) || {};
     const base = freshSave();
-    return { ...base, ...raw, heroes: { ...base.heroes, ...raw.heroes } };
+    const merged = { ...base, ...raw, heroes: { ...base.heroes, ...raw.heroes } };
+    if (!DIFFICULTIES[merged.difficulty]) merged.difficulty = DEFAULT_DIFFICULTY;
+    return merged;
   } catch {
     return freshSave();
   }
@@ -185,9 +200,10 @@ function showHelp(then) {
   });
 }
 
-/* Options du jeu : chaque ligne est un interrupteur enregistré aussitôt.
-   `then` est appelé à la fermeture ; `extra` ajoute des boutons sous
-   « Fermer » (la remise à zéro, depuis l'accueil). */
+/* Options du jeu : la difficulté (trois choix), puis une ligne par
+   interrupteur ; tout est enregistré aussitôt. `then` est appelé à la
+   fermeture ; `extra` ajoute des boutons sous « Fermer » (la remise à zéro,
+   depuis l'accueil). */
 const SETTINGS = [
   { key: "sound", name: "Son", hint: "Effets sonores du jeu" },
   { key: "diagonal", name: "Mouvements en diagonale", hint: "Échanger une tuile avec une voisine en coin. Les alignements restent en ligne ou en colonne." },
@@ -196,14 +212,38 @@ const SETTINGS = [
 function showSettings(then, extra = []) {
   showModal({
     title: "Paramètres",
-    html: `<div class="settings">${SETTINGS.map((s) => `
+    html: `<div class="settings">
+      <div class="setting choice">
+        <span><strong>Difficulté</strong><small id="diff-hint"></small></span>
+        <div class="seg" role="radiogroup" aria-label="Difficulté">${Object.entries(DIFFICULTIES).map(([key, d]) => `
+          <button role="radio" data-value="${key}">${d.name}</button>`).join("")}
+        </div>
+      </div>${SETTINGS.map((s) => `
       <button class="setting" role="switch" data-key="${s.key}">
         <span><strong>${s.name}</strong><small>${s.hint}</small></span>
         <i class="switch"></i>
       </button>`).join("")}</div>`,
     actions: [{ label: "Fermer", primary: true, run: then }, ...extra],
   });
-  for (const btn of modalEl.querySelectorAll(".setting")) {
+  // En pleine partie, le niveau en cours garde la difficulté de son départ.
+  const choices = [...modalEl.querySelectorAll(".seg button")];
+  const syncChoice = () => {
+    for (const btn of choices) btn.setAttribute("aria-checked", String(btn.dataset.value === save.difficulty));
+    $("#diff-hint").textContent = DIFFICULTIES[save.difficulty].hint
+      + (G && G.difficulty !== save.difficulty ? " S'applique à la prochaine partie." : "");
+  };
+  syncChoice();
+  for (const btn of choices) {
+    btn.addEventListener("click", () => {
+      save.difficulty = btn.dataset.value;
+      persist();
+      syncChoice();
+      if (save.sound) sfx.coin();
+      if (!G) renderHome();
+    });
+  }
+
+  for (const btn of modalEl.querySelectorAll(".setting[data-key]")) {
     const key = btn.dataset.key;
     const sync = () => btn.setAttribute("aria-checked", String(Boolean(save[key])));
     sync();
@@ -218,15 +258,18 @@ function showSettings(then, extra = []) {
 
 /* ── Accueil ─────────────────────────────────────────────────────────── */
 
+/* « · Facile » ou « · Difficile » ; rien en difficulté normale. */
+const difficultyTag = (key) => (key === DEFAULT_DIFFICULTY ? "" : ` · ${DIFFICULTIES[key].name}`);
+
 function renderHome() {
   $("#home-coins").textContent = save.coins;
   $("#lvl-num").textContent = pickedLevel;
-  $("#lvl-prev").disabled = pickedLevel <= 1;
-  $("#lvl-next").disabled = pickedLevel >= save.level;
-  const def = buildLevel(pickedLevel);
+  for (const id of ["#lvl-prev", "#lvl-prev5"]) $(id).disabled = pickedLevel <= 1;
+  for (const id of ["#lvl-next", "#lvl-next5"]) $(id).disabled = pickedLevel >= save.level;
+  const def = buildLevel(pickedLevel, save.difficulty);
   $("#lvl-zone").textContent = `${def.zone} · Niveau`;
   $("#lvl-info").textContent =
-    `${def.waves.length} vagues${def.boss ? " · Boss" : ""} · ${def.reward} pièces`;
+    `${def.waves.length} vagues${def.boss ? " · Boss" : ""} · ${def.reward} pièces${difficultyTag(save.difficulty)}`;
 
   const list = $("#hero-list");
   list.innerHTML = "";
@@ -263,8 +306,13 @@ function goHome() {
   show("home");
 }
 
-$("#lvl-prev").addEventListener("click", () => { pickedLevel = Math.max(1, pickedLevel - 1); renderHome(); });
-$("#lvl-next").addEventListener("click", () => { pickedLevel = Math.min(save.level, pickedLevel + 1); renderHome(); });
+/* Choix du niveau : un par un, ou par bonds de 5 (bornés aux niveaux ouverts). */
+for (const [id, step] of [["#lvl-prev5", -5], ["#lvl-prev", -1], ["#lvl-next", 1], ["#lvl-next5", 5]]) {
+  $(id).addEventListener("click", () => {
+    pickedLevel = Math.min(save.level, Math.max(1, pickedLevel + step));
+    renderHome();
+  });
+}
 $("#btn-help").addEventListener("click", () => showHelp());
 $("#btn-settings").addEventListener("click", () => {
   showSettings(undefined, [{ label: "Réinitialiser la progression", run: confirmReset }]);
@@ -279,7 +327,7 @@ function confirmReset() {
       {
         label: "Effacer ma progression",
         run: () => {
-          save = { ...freshSave(), sound: save.sound, diagonal: save.diagonal, seenHelp: true };
+          save = { ...freshSave(), sound: save.sound, diagonal: save.diagonal, difficulty: save.difficulty, seenHelp: true };
           persist();
           pickedLevel = 1;
           renderHome();
@@ -397,7 +445,9 @@ function startGame(level) {
   const maxHp = teamMaxHp(save.heroes);
   G = {
     level,
-    def: buildLevel(level),
+    difficulty: save.difficulty,
+    def: buildLevel(level, save.difficulty),
+    elapsed: 0, // secondes de jeu, pauses exclues
     wave: -1,
     enemies: [],
     target: 0,
@@ -432,7 +482,7 @@ function startGame(level) {
     chipEls[type] = chip;
   }
 
-  $("#hud-level").textContent = `Niveau ${level}`;
+  $("#hud-level").textContent = `Niveau ${level}${difficultyTag(G.difficulty)}`;
   spawnWave();
   updateTeam();
   updateChips();
@@ -722,15 +772,20 @@ function scoreGroups(groups, delay) {
 
 /* ── Chrono du combo ─────────────────────────────────────────────────── */
 
-/* Le chrono avance à l'horloge : chaque image le fait progresser pour une
-   barre fluide, et un minuteur prend le relais si le navigateur suspend les
+/* Le chrono du combo et le temps de jeu avancent à l'horloge : chaque image
+   les fait progresser pour une barre fluide, et un minuteur prend le relais si le navigateur suspend les
    images (onglet en arrière-plan), pour qu'un combo ne reste jamais figé. */
 let lastTick = performance.now();
 function tick() {
   const now = performance.now();
-  const dt = Math.min(0.25, (now - lastTick) / 1000);
+  const real = (now - lastTick) / 1000;
+  const dt = Math.min(0.25, real);
   lastTick = now;
-  if (!G || G.phase !== "combo" || G.paused) return;
+  if (!G || G.paused || G.phase === "over") return;
+  // Temps de jeu : l'écart réel, sauf application en arrière-plan (et borné,
+  // au cas où elle en reviendrait sans que la partie ait été mise en pause).
+  if (!document.hidden) G.elapsed += Math.min(2, real);
+  if (G.phase !== "combo") return;
   G.combo.remaining -= dt;
   comboFill.style.transform = `scaleX(${Math.max(0, G.combo.remaining / G.combo.total)})`;
   if (G.combo.remaining <= 0) endCombo();
@@ -942,7 +997,9 @@ async function enemiesAct() {
 /* ── Fin de partie, pause ────────────────────────────────────────────── */
 
 function finish(won) {
-  const { level, runCoins, def, maxCombo } = G;
+  const { level, runCoins, def, maxCombo, difficulty } = G;
+  const time = `<p>Temps de jeu : <strong>${formatDuration(G.elapsed)}</strong></p>`;
+  const label = `Niveau ${level}${difficultyTag(difficulty)}`;
   G.phase = "over";
   clearHint();
   const gain = won ? runCoins + def.reward : Math.floor(runCoins / 2);
@@ -956,7 +1013,7 @@ function finish(won) {
     pickedLevel = level + 1;
     showModal({
       title: "Victoire !",
-      html: `<p>Niveau ${level} terminé · meilleur combo ×${maxCombo}</p>${coins}`,
+      html: `<p>${label} terminé · meilleur combo ×${maxCombo}</p>${time}${coins}`,
       actions: [
         { label: `Niveau ${level + 1}`, primary: true, run: () => startGame(level + 1) },
         { label: "Améliorer mes héros", run: goHome },
@@ -967,7 +1024,7 @@ function finish(won) {
     pickedLevel = level;
     showModal({
       title: "Défaite…",
-      html: `<p>Ton équipe est tombée à la vague ${G.wave + 1}. Tu gardes la moitié des pièces récoltées.</p>${coins}`,
+      html: `<p>${label} : ton équipe est tombée à la vague ${G.wave + 1} sur ${def.waves.length}. Tu gardes la moitié des pièces récoltées.</p>${time}${coins}`,
       actions: [
         { label: "Réessayer", primary: true, run: () => startGame(level) },
         { label: "Améliorer mes héros", run: goHome },

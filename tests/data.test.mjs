@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   BESTIARY, BOSSES, ZONES, ZONE_LEVELS, zoneOf, zoneName,
-  buildLevel, enemyHpScale, enemyAtkScale, ARMOR_KEEP,
+  buildLevel, enemyHpScale, enemyAtkScale, ARMOR_KEEP, DIFFICULTIES, DEFAULT_DIFFICULTY,
 } from "../js/data.js";
 import { ABILITIES } from "../js/abilities.js";
 
@@ -98,6 +98,38 @@ test("chaque niveau ne pioche que dans sa zone, qui se dévoile peu à peu", () 
     for (const enemy of waves.flat()) {
       if (enemy.boss) assert.equal(enemy.id, zone.boss.id, `niveau ${n}`);
       else assert.ok(allowed.has(enemy.id), `niveau ${n} : ${enemy.id}`);
+    }
+  }
+});
+
+test("difficulté : normal est la référence, facile et difficile l'encadrent", () => {
+  assert.deepEqual(Object.keys(DIFFICULTIES), ["easy", "normal", "hard"]);
+  assert.equal(DEFAULT_DIFFICULTY, "normal");
+  assert.equal(DIFFICULTIES.normal.scale, 1);
+  assert.ok(DIFFICULTIES.easy.scale < 1 && DIFFICULTIES.hard.scale > 1);
+  for (const n of [1, 12, 45]) {
+    assert.deepEqual(buildLevel(n, "normal"), buildLevel(n));
+    assert.deepEqual(buildLevel(n, "inconnue"), buildLevel(n));
+  }
+});
+
+test("difficulté : seuls les PV et l'attaque des ennemis changent", () => {
+  for (const n of [1, 12, 45]) {
+    const normal = buildLevel(n);
+    for (const key of ["easy", "hard"]) {
+      const { scale } = DIFFICULTIES[key];
+      const level = buildLevel(n, key);
+      assert.equal(level.reward, normal.reward);
+      assert.equal(level.boss, normal.boss);
+      assert.equal(level.zone, normal.zone);
+      assert.deepEqual(level.waves.map((w) => w.map((e) => e.id)), normal.waves.map((w) => w.map((e) => e.id)));
+      for (const enemy of level.waves.flat()) {
+        const base = templates.get(enemy.id);
+        assert.equal(enemy.hp, Math.max(1, Math.round(base.hp * enemyHpScale(n) * scale)));
+        assert.equal(enemy.atk, Math.max(1, Math.round(base.atk * enemyAtkScale(n) * scale)));
+        assert.equal(enemy.first, base.cd);
+        assert.equal(enemy.ability, base.ability);
+      }
     }
   }
 });

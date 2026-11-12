@@ -66,13 +66,19 @@
     </header>
 
     <div class="level-pick">
-      <button id="lvl-prev" class="round" aria-label="Niveau précédent">‹</button>
+      <div class="lvl-nav">
+        <button id="lvl-prev" class="round" aria-label="Niveau précédent">‹</button>
+        <button id="lvl-prev5" class="round jump" aria-label="Reculer de 5 niveaux">«</button>
+      </div>
       <div class="level-card">
         <small id="lvl-zone">Niveau</small>
         <strong id="lvl-num">1</strong>
         <span id="lvl-info"></span>
       </div>
-      <button id="lvl-next" class="round" aria-label="Niveau suivant">›</button>
+      <div class="lvl-nav">
+        <button id="lvl-next" class="round" aria-label="Niveau suivant">›</button>
+        <button id="lvl-next5" class="round jump" aria-label="Avancer de 5 niveaux">»</button>
+      </div>
     </div>
     <button id="btn-play" class="cta">Jouer</button>
 
