@@ -49,7 +49,7 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
   | Immortel     | Revient une fois à la vie avec 30 % de ses PV                |
   | Régénération | Récupère 8 % de ses PV à chaque tour                         |
   | Guérisseur   | Rend 10 % de leurs PV à ses alliés à chaque tour             |
-  | Rage         | Attaque +50 % sous la moitié de ses PV                       |
+  | Rage         | Attaque +25 % sous la moitié de ses PV                       |
   | Meute        | Attaque +25 % par autre ennemi en vie                        |
   | Frénésie     | Attaque plus vite après chaque coup                          |
   | Spectral     | Ses coups traversent l'armure                                |
@@ -62,7 +62,7 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
   | Entrave      | Tant qu'il vit, le chrono de combo est raccourci de 25 %     |
 
 - Les pièces gagnées servent à améliorer les héros depuis l'accueil.
-- Les niveaux sont sans fin. Les ennemis gagnent +12 % de PV et +7 % d'attaque
+- Les niveaux sont sans fin. Les ennemis gagnent +9 % de PV et +7 % d'attaque
   par niveau, en croissance composée : tôt ou tard il faut améliorer ses héros,
   quitte à rejouer d'anciens niveaux.
 

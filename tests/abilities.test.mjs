@@ -22,14 +22,14 @@ test("sans capacité : attaque et dégâts inchangés", () => {
   assert.equal(enemy.hp, 70);
 });
 
-test("rage : +50 % sous la moitié des PV seulement", () => {
+test("rage : +25 % sous la moitié des PV seulement", () => {
   const enemy = foe({ ability: "rage" });
   assert.equal(attackOf(enemy, [enemy]), 20);
   enemy.hp = 50;
   assert.equal(isEnraged(enemy), false);
   enemy.hp = 49;
   assert.equal(isEnraged(enemy), true);
-  assert.equal(attackOf(enemy, [enemy]), 30);
+  assert.equal(attackOf(enemy, [enemy]), 25);
 });
 
 test("meute : +25 % par autre ennemi en vie", () => {

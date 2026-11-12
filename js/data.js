@@ -169,8 +169,10 @@ function mulberry32(seed) {
 
 /* Croissance composée : elle finit toujours par dépasser les améliorations des
    héros (linéaires), si bien que chaque joueur trouve son palier.
-   PV +12 % par niveau (×2,8 au niveau 10, ×8,6 au 20) ; attaque +7 % (×1,8, ×3,6). */
-export const HP_GROWTH = 1.12;
+   PV +9 % par niveau (×2,2 au niveau 10, ×5,1 au 20) ; attaque +7 % (×1,8, ×3,6).
+   Les PV montent à peine plus vite que l'attaque : au-delà, les combats
+   s'éternisent sans devenir plus dangereux. */
+export const HP_GROWTH = 1.09;
 export const ATK_GROWTH = 1.07;
 export const enemyHpScale = (n) => Math.pow(HP_GROWTH, n - 1);
 export const enemyAtkScale = (n) => Math.pow(ATK_GROWTH, n - 1);

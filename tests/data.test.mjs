@@ -25,8 +25,8 @@ test("le niveau 1 garde les valeurs de base et commence par un seul ennemi", () 
 test("la croissance des ennemis est composée", () => {
   assert.equal(enemyHpScale(1), 1);
   assert.equal(enemyAtkScale(1), 1);
-  assert.ok(Math.abs(enemyHpScale(10) - 2.773) < 0.001);
-  assert.ok(Math.abs(enemyHpScale(35) - 47.14) < 0.01);
+  assert.ok(Math.abs(enemyHpScale(10) - 2.172) < 0.001);
+  assert.ok(Math.abs(enemyHpScale(35) - 18.73) < 0.01);
   assert.ok(Math.abs(enemyAtkScale(35) - 9.978) < 0.001);
   // Chaque niveau multiplie par le même facteur.
   assert.ok(Math.abs(enemyHpScale(21) / enemyHpScale(20) - enemyHpScale(2)) < 1e-9);

@@ -6,7 +6,7 @@
 
 export const FLYING_TAKEN = 0.5;   // part des dégâts du Chevalier subie par un volant
 export const SHELL_TAKEN = 0.6;    // part des dégâts subie par une cuirasse
-export const RAGE_BONUS = 0.5;     // attaque en plus sous la moitié des PV
+export const RAGE_BONUS = 0.25;    // attaque en plus sous la moitié des PV
 export const PACK_BONUS = 0.25;    // attaque en plus par autre ennemi en vie
 export const POISON_PART = 0.3;    // part de l'attaque perdue à chaque tour de venin
 export const POISON_TURNS = 2;
