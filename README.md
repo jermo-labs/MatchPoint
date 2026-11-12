@@ -7,12 +7,19 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
 
 - Fais glisser une tuile (ou touche deux cases voisines) pour aligner 3 symboles
   identiques ou plus.
-- Le premier alignement lance un chrono : enchaîne les alignements avant qu'il ne
-  s'épuise. Pendant le combo les tuiles ne retombent pas, et une tuile peut
-  glisser dans un trou. Toucher le chrono termine le combo tout de suite.
-- À la fin du combo, la grille retombe (les cascades comptent) puis chaque
-  symbole aligné fait agir son héros, avec un bonus de +15 % par alignement
-  supplémentaire :
+- Le premier alignement lance un chrono. Les tuiles alignées ne disparaissent
+  pas : elles restent en place, verrouillées (elles ne bougent plus). Tu
+  enchaînes les combinaisons en créant d'autres alignements ou en prolongeant
+  un alignement verrouillé — y poser un 4e symbole est un mouvement valide.
+  Chaque combinaison relance le chrono, un peu plus court.
+- Le combo se termine à la fin du chrono, quand tu touches le chrono, ou au
+  premier mouvement qui n'aligne rien. Ce dernier mouvement reste joué : les
+  tuiles gardent leur nouvelle place. Seul un mouvement raté hors combo (le
+  premier du tour) est annulé.
+- Tous les alignements sont alors résolus d'un coup : les tuiles verrouillées
+  disparaissent, la grille retombe (les cascades comptent), puis chaque symbole
+  aligné fait agir son héros. Chaque combinaison supplémentaire ajoute +50 % à
+  tous les effets du tour (×1, ×1,5, ×2, ×2,5…) :
 
   | Symbole  | Héros     | Effet                                   |
   |----------|-----------|-----------------------------------------|

@@ -221,6 +221,14 @@ h1, h2 { margin: 0; }
 .tile.sel .gem { transform: scale(1.1); outline: 3px solid #fff; outline-offset: -1px; }
 .tile.hint .gem { animation: hint 0.9s ease-in-out infinite; }
 @keyframes hint { 50% { transform: scale(1.14); filter: brightness(1.3); } }
+/* Tuile alignée pendant le combo : elle reste en place, cerclée de blanc,
+   en attendant la fin du combo. */
+.tile.locked .gem {
+  transform: scale(0.86);
+  box-shadow: 0 0 0 3px #fff, 0 0 14px 4px var(--a);
+  animation: locked 0.9s ease-in-out infinite;
+}
+@keyframes locked { 50% { filter: brightness(1.35); } }
 .tile.pop { z-index: 3; }
 .tile.pop .gem { animation: pop 0.26s ease-in forwards; }
 @keyframes pop {

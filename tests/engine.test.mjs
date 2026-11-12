@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   COLS, ROWS, TYPES, idx, makeTile, createBoard, findMatches, trySwap,
-  clearGroups, collapse, findMove, shuffle, groupPoints, comboMultiplier,
+  lockGroups, clearLocked, lockedPoints, forceSwap, collapse, findMove, shuffle,
+  groupPoints, comboMultiplier,
 } from "../js/engine.js";
 
 /* Générateur déterministe pour des tests reproductibles. */
@@ -122,16 +123,91 @@ test("trySwap : une tuile peut glisser dans un trou pour s'aligner", () => {
   assert.equal(g[3], null);
 });
 
-test("clearGroups puis collapse : la grille est de nouveau pleine", () => {
+test("lockGroups : les tuiles alignées restent en place, verrouillées", () => {
+  const rows = [...QUIET];
+  rows[0] = "sshscos";
+  const g = grid(rows);
+  const groups = trySwap(g, 2, 3);
+  const cells = lockGroups(g, groups);
+  assert.deepEqual(cells, [0, 1, 2]);
+  assert.ok(g.every(Boolean), "aucune tuile ne disparaît pendant le combo");
+  assert.ok([0, 1, 2].every((i) => g[i].locked));
+  assert.equal(findMatches(g).length, 0, "un alignement verrouillé n'est pas recompté");
+  assert.equal(lockedPoints(g).sword, 3);
+});
+
+test("tuiles verrouillées : immobiles", () => {
+  const rows = [...QUIET];
+  rows[0] = "sshscos";
+  const g = grid(rows);
+  lockGroups(g, trySwap(g, 2, 3));
+  const before = [...g];
+  assert.equal(trySwap(g, 2, 3), null);
+  assert.equal(trySwap(g, 0, COLS), null);
+  assert.equal(forceSwap(g, 2, 3), false);
+  assert.deepEqual(g, before);
+  // findMove ne propose jamais de déplacer une tuile verrouillée.
+  const move = findMove(g);
+  if (move) assert.ok(move.every((cell) => !g[cell].locked));
+});
+
+test("prolonger un alignement verrouillé avec un 4e symbole est un mouvement valide", () => {
+  const rows = [...QUIET];
+  rows[0] = "sshscos"; // sss après le 1er échange, puis h en colonne 3
+  const g = grid(rows);
+  lockGroups(g, trySwap(g, 2, 3));
+  // Un 's' libre attend juste sous la case (3,0) : le monter prolonge la ligne.
+  g[idx(3, 1)] = makeTile("sword");
+  const groups = trySwap(g, idx(3, 1), idx(3, 0));
+  assert.ok(groups, "le mouvement est accepté");
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].cells, [0, 1, 2, 3]);
+  const before = lockedPoints(g).sword;
+  assert.deepEqual(lockGroups(g, groups), [3], "seule la 4e tuile est nouvellement verrouillée");
+  assert.equal(before, 3);
+  assert.equal(lockedPoints(g).sword, 6, "le groupe vaut désormais un alignement de 4");
+  assert.equal(findMatches(g).length, 0);
+});
+
+test("une ligne croisant une tuile verrouillée fusionne avec son groupe", () => {
+  const rows = [...QUIET];
+  rows[0] = "sshscos";
+  const g = grid(rows);
+  lockGroups(g, trySwap(g, 2, 3)); // sss verrouillé en haut à gauche
+  // Deux 's' libres sous la case (0,0) : la colonne 0 devient s, s, s.
+  g[idx(0, 1)] = makeTile("sword");
+  g[idx(0, 2)] = makeTile("sword");
+  const groups = findMatches(g);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].cells, [0, 1, 2, idx(0, 1), idx(0, 2)]);
+  lockGroups(g, groups);
+  assert.equal(lockedPoints(g).sword, 10, "un L de 5 tuiles");
+});
+
+test("forceSwap : le mouvement raté reste sur la grille", () => {
+  const g = grid(QUIET);
+  const a = g[0];
+  const b = g[1];
+  assert.equal(trySwap(g, 0, 1), null);
+  assert.equal(forceSwap(g, 0, 1), true);
+  assert.equal(g[0], b);
+  assert.equal(g[1], a);
+  assert.equal(forceSwap(g, 0, 2), false, "cases non voisines");
+});
+
+test("clearLocked puis collapse : la grille est de nouveau pleine", () => {
   const rows = [...QUIET];
   rows[5] = "ooohhco".replace("hh", "hs");
   const g = grid(rows);
   const groups = findMatches(g);
   assert.ok(groups.length >= 1);
-  const removed = clearGroups(g, groups);
+  lockGroups(g, groups);
+  const removed = clearLocked(g);
   assert.ok(removed.length >= 3);
+  assert.ok(removed.every((t) => t.locked));
   assert.ok(g.some((t) => t === null));
   const { moves, spawns } = collapse(g, seeded(7));
+  assert.ok(g.every((t) => t && !t.locked));
   assert.ok(g.every(Boolean));
   assert.equal(spawns.length, removed.length);
   assert.ok(moves.length > 0);
@@ -184,5 +260,9 @@ test("barème : points par alignement et multiplicateur de combo", () => {
   assert.equal(groupPoints(4), 6);
   assert.equal(groupPoints(5), 10);
   assert.equal(comboMultiplier(1), 1);
-  assert.ok(Math.abs(comboMultiplier(3) - 1.3) < 1e-9);
+  assert.equal(comboMultiplier(2), 1.5);
+  assert.equal(comboMultiplier(3), 2);
+  // Trois alignements de 3 enchaînés valent 9 points × 2, contre 3 points × 1
+  // chacun joués séparément : le combo rapporte le double.
+  assert.equal(3 * groupPoints(3) * comboMultiplier(3), 2 * (3 * groupPoints(3) * comboMultiplier(1)));
 });

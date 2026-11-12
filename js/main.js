@@ -2,15 +2,20 @@
 
    Déroulement d'un tour :
      idle   le joueur cherche un premier alignement
-     combo  le chrono tourne ; les tuiles alignées disparaissent sans que la
-            grille ne retombe, et chaque nouvel alignement relance le chrono
-     busy   fin du combo : la grille retombe (cascades comptées), les héros
-            agissent, puis les ennemis ; la saisie est bloquée
+     combo  le chrono tourne ; les tuiles alignées restent en place,
+            verrouillées ; chaque nouvel alignement, ou prolongement d'un
+            alignement verrouillé, relance le chrono. Le combo s'arrête à la
+            fin du chrono ou au premier mouvement qui n'aligne rien (ce
+            mouvement reste joué)
+     busy   fin du combo : les tuiles verrouillées disparaissent, la grille
+            retombe (cascades comptées), les héros agissent, puis les
+            ennemis ; la saisie est bloquée
      over   partie terminée */
 
 import {
-  COLS, ROWS, TYPES, colOf, rowOf, createBoard, findMatches, trySwap, clearGroups,
-  collapse, findMove, shuffle, isAdjacent, groupPoints, comboMultiplier,
+  COLS, ROWS, TYPES, colOf, rowOf, createBoard, findMatches, trySwap, forceSwap,
+  lockGroups, lockedPoints, clearLocked, collapse, findMove, shuffle, isAdjacent,
+  comboMultiplier, COMBO_BONUS,
 } from "./engine.js";
 import { HEROES, heroPower, upgradeCost, teamMaxHp, buildLevel } from "./data.js";
 
@@ -160,8 +165,8 @@ function showHelp(then) {
     title: "Comment jouer",
     html: `<ul class="rules">
       <li><span class="num">1</span><span>Fais glisser une tuile pour <strong>aligner 3 symboles</strong> identiques ou plus.</span></li>
-      <li><span class="num">2</span><span>Le chrono démarre : <strong>enchaîne les alignements</strong> avant qu'il ne s'épuise. Les tuiles ne retombent qu'à la fin du combo, et tu peux glisser une tuile dans un trou. Plus rien à aligner ? Touche le chrono pour lancer l'attaque.</span></li>
-      <li><span class="num">3</span><span>Plus le combo est long, plus tes héros frappent fort. <strong>Touche un ennemi</strong> pour le cibler ; son compteur indique dans combien de tours il attaque.</span></li>
+      <li><span class="num">2</span><span>Le chrono démarre et les tuiles alignées restent en place, verrouillées : <strong>enchaîne les combinaisons</strong> en créant d'autres alignements ou en prolongeant un alignement existant. Le combo se termine à la fin du chrono, au premier mouvement qui n'aligne rien, ou quand tu touches le chrono.</span></li>
+      <li><span class="num">3</span><span>Chaque combinaison supplémentaire ajoute <strong>+${COMBO_BONUS * 100} %</strong> à tous les effets du tour. <strong>Touche un ennemi</strong> pour le cibler ; son compteur indique dans combien de tours il attaque.</span></li>
       ${row("sword", "<strong>Chevalier</strong> — frappe la cible")}
       ${row("bow", "<strong>Archère</strong> — transperce jusqu'à l'ennemi suivant")}
       ${row("magic", "<strong>Mage</strong> — touche tous les ennemis")}
@@ -264,6 +269,7 @@ function popTile(tile, delay) {
   if (!el) return;
   els.delete(tile.id);
   setTimeout(() => {
+    el.classList.remove("locked");
     el.classList.add("pop");
     setTimeout(() => el.remove(), POP_MS);
   }, delay);
@@ -525,23 +531,33 @@ boardEl.addEventListener("pointerup", () => {
   drag = null;
   if (!canPlay()) return;
   if (G.selected >= 0 && G.selected !== cell && isAdjacent(G.selected, cell)) attemptSwap(G.selected, cell);
-  else if (G.selected === cell || !G.grid[cell]) select(-1);
+  else if (G.selected === cell || !G.grid[cell] || G.grid[cell].locked) select(-1);
   else select(cell);
 });
 boardEl.addEventListener("pointercancel", () => { drag = null; });
 
 function attemptSwap(a, b) {
-  clearHint();
-  select(-1);
   const ta = G.grid[a];
   const tb = G.grid[b];
+  // Une tuile verrouillée ne bouge pas : le geste est ignoré, sans mettre
+  // fin au combo (ce n'est pas un mouvement raté, juste un toucher sans effet).
+  if (ta?.locked || tb?.locked) return;
+  clearHint();
+  select(-1);
   const groups = trySwap(G.grid, a, b);
-  // Dans les deux cas les tuiles glissent ; si l'échange est refusé, elles reviennent.
   if (ta) setPos(els.get(ta.id), b);
   if (tb) setPos(els.get(tb.id), a);
 
   if (!groups) {
     sfx.bad();
+    // En plein combo, un mouvement qui n'aligne rien reste joué (les tuiles
+    // gardent leur nouvelle place) et met fin au combo.
+    if (G.phase === "combo") {
+      forceSwap(G.grid, a, b);
+      endCombo();
+      return;
+    }
+    // Premier mouvement du tour : il est annulé, les tuiles reviennent.
     const game = G;
     setTimeout(() => {
       if (G !== game) return;
@@ -551,7 +567,7 @@ function attemptSwap(a, b) {
         if (cell >= 0 && el) setPos(el, cell);
       }
     }, SWAP_MS + 20);
-    if (G.phase === "idle") scheduleHint();
+    scheduleHint();
     return;
   }
 
@@ -565,21 +581,53 @@ function attemptSwap(a, b) {
   G.combo.remaining = time;
 }
 
-/* Retire les alignements, les compte dans le tour et lance les animations. */
+function endCombo() {
+  if (G.phase !== "combo") return;
+  G.phase = "busy";
+  resolveTurn(G);
+}
+
+/* Fin du combo : fait disparaître toutes les tuiles verrouillées, en vague.
+   Renvoie la durée de l'animation. */
+function popLocked() {
+  const tiles = clearLocked(G.grid);
+  const stagger = tiles.length ? Math.min(22, 330 / tiles.length) : 0;
+  tiles.forEach((tile, i) => popTile(tile, i * stagger));
+  return tiles.length ? tiles.length * stagger + POP_MS : 0;
+}
+
+/* Compte les alignements (nouveaux ou prolongés) dans le tour et verrouille
+   leurs tuiles, qui restent en place jusqu'à la fin du combo. Chaque groupe
+   compte pour une combinaison ; les points gagnés sont la différence de
+   valeur des alignements verrouillés avant et après (prolonger un alignement
+   de 3 en 4 rapporte donc la différence entre les deux). */
 function scoreGroups(groups, delay) {
-  const board = boardEl.getBoundingClientRect();
-  const size = board.width / COLS;
-  for (const group of groups) {
+  const before = lockedPoints(G.grid);
+  const cells = lockGroups(G.grid, groups);
+  const after = lockedPoints(G.grid);
+
+  for (const cell of cells) {
+    const el = els.get(G.grid[cell].id);
+    setTimeout(() => el.classList.add("locked"), delay); // après la fin du glissement
+  }
+  for (let i = 0; i < groups.length; i++) {
     G.combo.count++;
-    const pts = groupPoints(group.cells.length);
-    G.tally[group.type] += pts;
-    const x = board.left + (group.cells.reduce((s, c) => s + colOf(c), 0) / group.cells.length + 0.5) * size;
-    const y = board.top + (group.cells.reduce((s, c) => s + rowOf(c), 0) / group.cells.length + 0.5) * size;
-    setTimeout(() => floatText(`+${pts}`, x, y, "pts"), delay);
     sfx.match(G.combo.count);
   }
   G.maxCombo = Math.max(G.maxCombo, G.combo.count);
-  for (const tile of clearGroups(G.grid, groups)) popTile(tile, delay);
+
+  const board = boardEl.getBoundingClientRect();
+  const size = board.width / COLS;
+  for (const type of TYPES) {
+    const pts = after[type] - before[type];
+    if (pts <= 0) continue;
+    G.tally[type] += pts;
+    // Le gain s'affiche au-dessus des tuiles qui viennent d'être verrouillées.
+    const mine = cells.filter((cell) => G.grid[cell].type === type);
+    const x = board.left + (mine.reduce((s, c) => s + colOf(c), 0) / mine.length + 0.5) * size;
+    const y = board.top + (mine.reduce((s, c) => s + rowOf(c), 0) / mine.length + 0.5) * size;
+    setTimeout(() => floatText(`+${pts}`, x, y, "pts"), delay);
+  }
   updateChips();
   updateCombo(true);
 }
@@ -597,10 +645,7 @@ function tick() {
   if (!G || G.phase !== "combo" || G.paused) return;
   G.combo.remaining -= dt;
   comboFill.style.transform = `scaleX(${Math.max(0, G.combo.remaining / G.combo.total)})`;
-  if (G.combo.remaining <= 0) {
-    G.phase = "busy";
-    resolveTurn(G);
-  }
+  if (G.combo.remaining <= 0) endCombo();
 }
 // Toucher le chrono termine le combo tout de suite (plus rien à aligner).
 comboEl.addEventListener("click", () => {
@@ -621,18 +666,21 @@ async function resolveTurn(game) {
   drag = null;
   select(-1);
   updateCombo();
-  await sleep(SWAP_MS + POP_MS); // laisse finir les dernières disparitions
+  await sleep(2 * SWAP_MS + 60); // laisse finir le dernier glissement (aller-retour si refusé)
   if (gone()) return;
 
-  // La grille retombe ; les alignements créés par la chute s'ajoutent au tour.
+  // Tous les alignements du combo disparaissent ensemble, puis la grille
+  // retombe ; les alignements créés par la chute s'ajoutent au tour.
   for (;;) {
+    await sleep(popLocked() + 40);
+    if (gone()) return;
     const { spawns } = collapse(G.grid);
     await dropTiles(spawns.map((s) => ({ tile: s.tile, cell: s.to, fromRow: rowOf(s.to) - s.drop })));
     if (gone()) return;
     const groups = findMatches(G.grid);
     if (!groups.length) break;
     scoreGroups(groups, 0);
-    await sleep(POP_MS + 80);
+    await sleep(240); // montre un instant la cascade verrouillée avant de la retirer
     if (gone()) return;
   }
 

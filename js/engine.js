@@ -1,9 +1,15 @@
 /* Moteur match-3 — logique pure, sans DOM (testable avec `node --test`).
 
    La grille est un tableau à plat de COLS × ROWS cases, chacune contenant
-   soit une tuile { id, type }, soit null (un trou laissé par un alignement
-   pendant un combo). Invariant : au repos, la grille ne contient aucun
-   alignement — tout alignement est retiré dès qu'il apparaît. */
+   soit une tuile { id, type, locked? }, soit null (un trou, entre le retrait
+   des tuiles et la chute qui suit).
+
+   Pendant un combo, les tuiles alignées ne sont pas retirées : elles sont
+   verrouillées (`locked`). Une tuile verrouillée reste à sa place et ne peut
+   plus être déplacée, mais elle compte toujours dans les alignements : poser
+   une tuile libre au bout d'un alignement verrouillé le prolonge.
+   Invariant : toute tuile prise dans un alignement est verrouillée — un
+   alignement est verrouillé (ou prolongé) dès qu'il apparaît. */
 
 export const COLS = 7;
 export const ROWS = 6;
@@ -51,18 +57,19 @@ export function createBoard(rng = Math.random) {
   }
 }
 
-/* Renvoie les alignements de 3+ sous forme de groupes { type, cells }.
+/* Alignements de 3+ cases de même type, sous forme de groupes
+   { type, cells }. `typeOf` donne le type d'une case (null = ne compte pas).
    Deux lignes qui se croisent (formes en L, T, +) fusionnent en un groupe. */
-export function findMatches(g) {
+function groupsOf(g, typeOf) {
   const runs = [];
   const scan = (length, count, at) => {
     for (let line = 0; line < count; line++) {
       let start = 0;
       while (start < length) {
-        const tile = g[at(line, start)];
+        const type = typeOf(g[at(line, start)]);
         let end = start + 1;
-        if (tile) {
-          while (end < length && g[at(line, end)]?.type === tile.type) end++;
+        if (type) {
+          while (end < length && typeOf(g[at(line, end)]) === type) end++;
           if (end - start >= 3) {
             const cells = [];
             for (let k = start; k < end; k++) cells.push(at(line, k));
@@ -100,6 +107,26 @@ export function findMatches(g) {
   });
 }
 
+/* Alignements nouveaux ou prolongés : ceux qui contiennent au moins une
+   tuile libre. Les tuiles verrouillées comptent dans l'alignement (un 4e
+   symbole posé au bout de trois symboles verrouillés forme un groupe de 4),
+   mais un alignement entièrement verrouillé, déjà compté, n'est pas renvoyé. */
+export function findMatches(g) {
+  return groupsOf(g, (tile) => tile?.type ?? null)
+    .filter((group) => group.cells.some((cell) => !g[cell].locked));
+}
+
+/* Points des alignements verrouillés, par type. La différence avant/après un
+   verrouillage donne ce qu'un mouvement rapporte, prolongements compris
+   (passer un alignement de 3 à 4 rapporte la différence entre les deux). */
+export function lockedPoints(g) {
+  const points = Object.fromEntries(TYPES.map((type) => [type, 0]));
+  for (const group of groupsOf(g, (tile) => (tile?.locked ? tile.type : null))) {
+    points[group.type] += groupPoints(group.cells.length);
+  }
+  return points;
+}
+
 export function isAdjacent(a, b) {
   return Math.abs(colOf(a) - colOf(b)) + Math.abs(rowOf(a) - rowOf(b)) === 1;
 }
@@ -110,13 +137,20 @@ function swapCells(g, a, b) {
   g[b] = t;
 }
 
-/* Tente l'échange de deux cases voisines. L'une des deux peut être un trou
-   (on glisse alors la tuile dans l'espace libre). Si l'échange ne crée aucun
+/* Deux cases peuvent-elles être échangées ? Elles doivent être voisines ;
+   l'une peut être un trou (la tuile glisse dans l'espace libre), mais une
+   tuile verrouillée ne bouge pas. */
+export function canSwap(g, a, b) {
+  if (a < 0 || b < 0 || a >= g.length || b >= g.length) return false;
+  if (!isAdjacent(a, b)) return false;
+  if (!g[a] && !g[b]) return false;
+  return !g[a]?.locked && !g[b]?.locked;
+}
+
+/* Tente l'échange de deux cases voisines. S'il ne crée ni ne prolonge aucun
    alignement, la grille est laissée intacte et la fonction renvoie null. */
 export function trySwap(g, a, b) {
-  if (a < 0 || b < 0 || a >= g.length || b >= g.length) return null;
-  if (!isAdjacent(a, b)) return null;
-  if (!g[a] && !g[b]) return null;
+  if (!canSwap(g, a, b)) return null;
   swapCells(g, a, b);
   const groups = findMatches(g);
   if (!groups.length) {
@@ -126,15 +160,39 @@ export function trySwap(g, a, b) {
   return groups;
 }
 
-/* Retire les tuiles des groupes ; renvoie les tuiles retirées. */
-export function clearGroups(g, groups) {
-  const removed = [];
+/* Échange deux cases même si cela n'aligne rien : c'est le mouvement raté
+   qui met fin à un combo, et qui reste sur la grille. Renvoie false si
+   l'échange est impossible. */
+export function forceSwap(g, a, b) {
+  if (!canSwap(g, a, b)) return false;
+  swapCells(g, a, b);
+  return true;
+}
+
+/* Verrouille les tuiles libres des groupes (elles restent en place jusqu'à
+   la fin du combo) ; renvoie les cases nouvellement verrouillées. */
+export function lockGroups(g, groups) {
+  const cells = [];
   for (const group of groups) {
     for (const cell of group.cells) {
-      if (g[cell]) {
-        removed.push(g[cell]);
-        g[cell] = null;
+      const tile = g[cell];
+      if (tile && !tile.locked) {
+        tile.locked = true;
+        cells.push(cell);
       }
+    }
+  }
+  return cells;
+}
+
+/* Fin du combo : retire toutes les tuiles verrouillées, dans l'ordre de la
+   grille ; renvoie les tuiles retirées. */
+export function clearLocked(g) {
+  const removed = [];
+  for (let i = 0; i < g.length; i++) {
+    if (g[i]?.locked) {
+      removed.push(g[i]);
+      g[i] = null;
     }
   }
   return removed;
@@ -180,6 +238,7 @@ export function findMove(g) {
     if (rowOf(i) < ROWS - 1) neighbours.push(i + COLS);
     for (const j of neighbours) {
       if (!g[i] && !g[j]) continue;
+      if (g[i]?.locked || g[j]?.locked) continue;
       swapCells(g, i, j);
       const ok = findMatches(g).length > 0;
       swapCells(g, i, j);
@@ -213,7 +272,11 @@ export function groupPoints(n) {
   return n;
 }
 
-/* Multiplicateur appliqué à tout le tour selon le nombre d'alignements. */
+/* Multiplicateur appliqué à tous les effets du tour selon le nombre de
+   combinaisons (alignements et prolongements) : +50 % par combinaison
+   supplémentaire, soit ×1, ×1,5, ×2, ×2,5… Les points s'additionnant déjà,
+   enchaîner rapporte nettement plus que la somme des coups joués un à un. */
+export const COMBO_BONUS = 0.5;
 export function comboMultiplier(count) {
-  return 1 + 0.15 * Math.max(0, count - 1);
+  return 1 + COMBO_BONUS * Math.max(0, count - 1);
 }
