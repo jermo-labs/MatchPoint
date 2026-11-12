@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  COLS, ROWS, TYPES, idx, makeTile, createBoard, findMatches, trySwap,
+  COLS, ROWS, TYPES, idx, makeTile, createBoard, findMatches, trySwap, isAdjacent,
   lockGroups, clearLocked, lockedPoints, forceSwap, collapse, findMove, shuffle,
   groupPoints, comboMultiplier,
 } from "../js/engine.js";
@@ -182,6 +182,53 @@ test("une ligne croisant une tuile verrouillée fusionne avec son groupe", () =>
   assert.deepEqual(groups[0].cells, [0, 1, 2, idx(0, 1), idx(0, 2)]);
   lockGroups(g, groups);
   assert.equal(lockedPoints(g).sword, 10, "un L de 5 tuiles");
+});
+
+test("isAdjacent : côtés seulement, ou coins compris avec l'option diagonale", () => {
+  const centre = idx(3, 3);
+  for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    assert.ok(isAdjacent(centre, idx(3 + dc, 3 + dr)));
+  }
+  for (const [dc, dr] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    assert.equal(isAdjacent(centre, idx(3 + dc, 3 + dr)), false);
+    assert.ok(isAdjacent(centre, idx(3 + dc, 3 + dr), true));
+  }
+  assert.equal(isAdjacent(centre, idx(5, 3), true), false, "deux cases d'écart");
+  assert.equal(isAdjacent(idx(6, 0), idx(0, 1), true), false, "fin de ligne → début de la suivante");
+});
+
+test("mouvement en diagonale : refusé par défaut, accepté avec l'option", () => {
+  // s s m …   → le 's' de (3,1) monte en diagonale vers (2,0) : s s s
+  // b m h s …
+  const g = grid(QUIET);
+  g[idx(1, 0)] = makeTile("sword");
+  g[idx(3, 1)] = makeTile("sword");
+  g[idx(4, 2)] = makeTile("shield"); // retire un coup orthogonal parasite
+  assert.equal(findMatches(g).length, 0);
+  const before = [...g];
+
+  assert.equal(findMove(g), null, "aucun coup sans les diagonales");
+  assert.equal(trySwap(g, idx(3, 1), idx(2, 0)), null);
+  assert.equal(forceSwap(g, idx(3, 1), idx(2, 0)), false);
+  assert.deepEqual(g, before);
+
+  const move = findMove(g, true);
+  assert.ok(move, "un coup existe avec les diagonales");
+  assert.deepEqual([...move].sort((a, b) => a - b), [idx(2, 0), idx(3, 1)]);
+  const groups = trySwap(g, idx(3, 1), idx(2, 0), true);
+  assert.ok(groups);
+  assert.deepEqual(groups[0].cells, [0, 1, 2]);
+});
+
+test("mouvement en diagonale sans alignement : refusé par trySwap, possible par forceSwap", () => {
+  const g = grid(QUIET);
+  const a = g[idx(0, 0)];
+  const b = g[idx(1, 1)];
+  assert.equal(trySwap(g, idx(0, 0), idx(1, 1), true), null);
+  assert.equal(g[idx(0, 0)], a);
+  assert.equal(forceSwap(g, idx(0, 0), idx(1, 1), true), true);
+  assert.equal(g[idx(0, 0)], b);
+  assert.equal(g[idx(1, 1)], a);
 });
 
 test("forceSwap : le mouvement raté reste sur la grille", () => {

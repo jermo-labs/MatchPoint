@@ -30,6 +30,9 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
   | Cœur     | Soigneuse | Rend des points de vie                  |
   | Pièce    | Trésorier | Pièces pour améliorer les héros         |
 
+- Option « Mouvements en diagonale » (Paramètres, désactivée par défaut) : une
+  tuile peut aussi être échangée avec une voisine en coin. Les alignements
+  restent en ligne ou en colonne.
 - Touche un ennemi pour le cibler. Son compteur indique dans combien de tours il
   attaque. Chaque niveau enchaîne plusieurs vagues ; un boss tous les 5 niveaux.
 - Les pièces gagnées servent à améliorer les héros depuis l'accueil.

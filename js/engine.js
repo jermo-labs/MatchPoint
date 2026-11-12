@@ -127,8 +127,13 @@ export function lockedPoints(g) {
   return points;
 }
 
-export function isAdjacent(a, b) {
-  return Math.abs(colOf(a) - colOf(b)) + Math.abs(rowOf(a) - rowOf(b)) === 1;
+/* Deux cases sont-elles voisines ? Par défaut par un côté seulement ; avec
+   `diagonal`, les quatre voisines en coin comptent aussi. (Les alignements,
+   eux, restent toujours horizontaux ou verticaux.) */
+export function isAdjacent(a, b, diagonal = false) {
+  const dc = Math.abs(colOf(a) - colOf(b));
+  const dr = Math.abs(rowOf(a) - rowOf(b));
+  return diagonal ? Math.max(dc, dr) === 1 : dc + dr === 1;
 }
 
 function swapCells(g, a, b) {
@@ -140,17 +145,17 @@ function swapCells(g, a, b) {
 /* Deux cases peuvent-elles être échangées ? Elles doivent être voisines ;
    l'une peut être un trou (la tuile glisse dans l'espace libre), mais une
    tuile verrouillée ne bouge pas. */
-export function canSwap(g, a, b) {
+export function canSwap(g, a, b, diagonal = false) {
   if (a < 0 || b < 0 || a >= g.length || b >= g.length) return false;
-  if (!isAdjacent(a, b)) return false;
+  if (!isAdjacent(a, b, diagonal)) return false;
   if (!g[a] && !g[b]) return false;
   return !g[a]?.locked && !g[b]?.locked;
 }
 
 /* Tente l'échange de deux cases voisines. S'il ne crée ni ne prolonge aucun
    alignement, la grille est laissée intacte et la fonction renvoie null. */
-export function trySwap(g, a, b) {
-  if (!canSwap(g, a, b)) return null;
+export function trySwap(g, a, b, diagonal = false) {
+  if (!canSwap(g, a, b, diagonal)) return null;
   swapCells(g, a, b);
   const groups = findMatches(g);
   if (!groups.length) {
@@ -163,8 +168,8 @@ export function trySwap(g, a, b) {
 /* Échange deux cases même si cela n'aligne rien : c'est le mouvement raté
    qui met fin à un combo, et qui reste sur la grille. Renvoie false si
    l'échange est impossible. */
-export function forceSwap(g, a, b) {
-  if (!canSwap(g, a, b)) return false;
+export function forceSwap(g, a, b, diagonal = false) {
+  if (!canSwap(g, a, b, diagonal)) return false;
   swapCells(g, a, b);
   return true;
 }
@@ -230,12 +235,19 @@ export function collapse(g, rng = Math.random) {
   return { moves, spawns };
 }
 
-/* Premier échange jouable trouvé, sous la forme [a, b], ou null. */
-export function findMove(g) {
+/* Premier échange jouable trouvé, sous la forme [a, b], ou null. Avec
+   `diagonal`, les échanges en coin sont aussi envisagés. */
+export function findMove(g, diagonal = false) {
   for (let i = 0; i < g.length; i++) {
     const neighbours = [];
-    if (colOf(i) < COLS - 1) neighbours.push(i + 1);
-    if (rowOf(i) < ROWS - 1) neighbours.push(i + COLS);
+    const lastCol = colOf(i) === COLS - 1;
+    const lastRow = rowOf(i) === ROWS - 1;
+    if (!lastCol) neighbours.push(i + 1);
+    if (!lastRow) neighbours.push(i + COLS);
+    if (diagonal && !lastRow) {
+      if (!lastCol) neighbours.push(i + COLS + 1);
+      if (colOf(i) > 0) neighbours.push(i + COLS - 1);
+    }
     for (const j of neighbours) {
       if (!g[i] && !g[j]) continue;
       if (g[i]?.locked || g[j]?.locked) continue;

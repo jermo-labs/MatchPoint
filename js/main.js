@@ -41,6 +41,7 @@ const freshSave = () => ({
   level: 1, // plus haut niveau débloqué
   heroes: Object.fromEntries(TYPES.map((t) => [t, 1])),
   sound: true,
+  diagonal: false, // option : autoriser les échanges avec une voisine en coin
   seenHelp: false,
 });
 
@@ -164,7 +165,7 @@ function showHelp(then) {
   showModal({
     title: "Comment jouer",
     html: `<ul class="rules">
-      <li><span class="num">1</span><span>Fais glisser une tuile pour <strong>aligner 3 symboles</strong> identiques ou plus.</span></li>
+      <li><span class="num">1</span><span>Fais glisser une tuile${save.diagonal ? " (y compris en diagonale)" : ""} pour <strong>aligner 3 symboles</strong> identiques ou plus, en ligne ou en colonne.</span></li>
       <li><span class="num">2</span><span>Le chrono démarre et les tuiles alignées restent en place, verrouillées : <strong>enchaîne les combinaisons</strong> en créant d'autres alignements ou en prolongeant un alignement existant. Le combo se termine à la fin du chrono, au premier mouvement qui n'aligne rien, ou quand tu touches le chrono.</span></li>
       <li><span class="num">3</span><span>Chaque combinaison supplémentaire ajoute <strong>+${COMBO_BONUS * 100} %</strong> à tous les effets du tour. <strong>Touche un ennemi</strong> pour le cibler ; son compteur indique dans combien de tours il attaque.</span></li>
       ${row("sword", "<strong>Chevalier</strong> — frappe la cible")}
@@ -178,6 +179,37 @@ function showHelp(then) {
   });
 }
 
+/* Options du jeu : chaque ligne est un interrupteur enregistré aussitôt.
+   `then` est appelé à la fermeture ; `extra` ajoute des boutons sous
+   « Fermer » (la remise à zéro, depuis l'accueil). */
+const SETTINGS = [
+  { key: "sound", name: "Son", hint: "Effets sonores du jeu" },
+  { key: "diagonal", name: "Mouvements en diagonale", hint: "Échanger une tuile avec une voisine en coin. Les alignements restent en ligne ou en colonne." },
+];
+
+function showSettings(then, extra = []) {
+  showModal({
+    title: "Paramètres",
+    html: `<div class="settings">${SETTINGS.map((s) => `
+      <button class="setting" role="switch" data-key="${s.key}">
+        <span><strong>${s.name}</strong><small>${s.hint}</small></span>
+        <i class="switch"></i>
+      </button>`).join("")}</div>`,
+    actions: [{ label: "Fermer", primary: true, run: then }, ...extra],
+  });
+  for (const btn of modalEl.querySelectorAll(".setting")) {
+    const key = btn.dataset.key;
+    const sync = () => btn.setAttribute("aria-checked", String(Boolean(save[key])));
+    sync();
+    btn.addEventListener("click", () => {
+      save[key] = !save[key];
+      persist();
+      sync();
+      if (save.sound) sfx.coin();
+    });
+  }
+}
+
 /* ── Accueil ─────────────────────────────────────────────────────────── */
 
 function renderHome() {
@@ -188,7 +220,6 @@ function renderHome() {
   const def = buildLevel(pickedLevel);
   $("#lvl-info").textContent =
     `${def.waves.length} vagues${def.boss ? " · Boss" : ""} · ${def.reward} pièces`;
-  $("#btn-sound").textContent = save.sound ? "Son : activé" : "Son : coupé";
 
   const list = $("#hero-list");
   list.innerHTML = "";
@@ -228,17 +259,28 @@ function goHome() {
 $("#lvl-prev").addEventListener("click", () => { pickedLevel = Math.max(1, pickedLevel - 1); renderHome(); });
 $("#lvl-next").addEventListener("click", () => { pickedLevel = Math.min(save.level, pickedLevel + 1); renderHome(); });
 $("#btn-help").addEventListener("click", () => showHelp());
-$("#btn-sound").addEventListener("click", () => { save.sound = !save.sound; persist(); renderHome(); sfx.coin(); });
-$("#btn-reset").addEventListener("click", () => {
+$("#btn-settings").addEventListener("click", () => {
+  showSettings(undefined, [{ label: "Réinitialiser la progression", run: confirmReset }]);
+});
+
+function confirmReset() {
   showModal({
     title: "Tout recommencer ?",
-    html: "<p>Ta progression, tes pièces et les niveaux de tes héros seront effacés.</p>",
+    html: "<p>Ta progression, tes pièces et les niveaux de tes héros seront effacés. Tes paramètres sont conservés.</p>",
     actions: [
       { label: "Annuler", primary: true },
-      { label: "Effacer ma progression", run: () => { save = { ...freshSave(), sound: save.sound, seenHelp: true }; persist(); pickedLevel = 1; renderHome(); } },
+      {
+        label: "Effacer ma progression",
+        run: () => {
+          save = { ...freshSave(), sound: save.sound, diagonal: save.diagonal, seenHelp: true };
+          persist();
+          pickedLevel = 1;
+          renderHome();
+        },
+      },
     ],
   });
-});
+}
 $("#btn-play").addEventListener("click", () => {
   sfx.unlock();
   if (save.seenHelp) return startGame(pickedLevel);
@@ -476,7 +518,7 @@ function scheduleHint() {
   const game = G;
   hintTimer = setTimeout(() => {
     if (G !== game || G.phase !== "idle" || G.paused) return;
-    const move = findMove(G.grid);
+    const move = findMove(G.grid, save.diagonal);
     if (!move) return;
     for (const cell of move) els.get(G.grid[cell]?.id)?.classList.add("hint");
   }, HINT_DELAY);
@@ -512,14 +554,23 @@ boardEl.addEventListener("pointermove", (event) => {
   if (!drag || !canPlay()) return;
   const dx = event.clientX - drag.x;
   const dy = event.clientY - drag.y;
-  const threshold = (boardEl.clientWidth / COLS) * 0.33;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  // Avec les diagonales, on attend un geste un peu plus long avant de
+  // trancher : la direction d'un doigt est imprécise sur les premiers pixels.
+  const threshold = (boardEl.clientWidth / COLS) * (save.diagonal ? 0.45 : 0.33);
+  if (Math.max(ax, ay) < threshold) return;
   const from = drag.cell;
   drag = null;
   if (!G.grid[from]) return; // on ne « tire » pas un trou
   let c = colOf(from);
   let r = rowOf(from);
-  if (Math.abs(dx) > Math.abs(dy)) c += Math.sign(dx);
+  // Huit secteurs de 45° : le geste est diagonal quand le petit côté dépasse
+  // tan(22,5°) ≈ 0,41 fois le grand.
+  if (save.diagonal && Math.min(ax, ay) > Math.max(ax, ay) * 0.414) {
+    c += Math.sign(dx);
+    r += Math.sign(dy);
+  } else if (ax > ay) c += Math.sign(dx);
   else r += Math.sign(dy);
   if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
   attemptSwap(from, r * COLS + c);
@@ -530,7 +581,7 @@ boardEl.addEventListener("pointerup", () => {
   const cell = drag.cell;
   drag = null;
   if (!canPlay()) return;
-  if (G.selected >= 0 && G.selected !== cell && isAdjacent(G.selected, cell)) attemptSwap(G.selected, cell);
+  if (G.selected >= 0 && G.selected !== cell && isAdjacent(G.selected, cell, save.diagonal)) attemptSwap(G.selected, cell);
   else if (G.selected === cell || !G.grid[cell] || G.grid[cell].locked) select(-1);
   else select(cell);
 });
@@ -544,7 +595,7 @@ function attemptSwap(a, b) {
   if (ta?.locked || tb?.locked) return;
   clearHint();
   select(-1);
-  const groups = trySwap(G.grid, a, b);
+  const groups = trySwap(G.grid, a, b, save.diagonal);
   if (ta) setPos(els.get(ta.id), b);
   if (tb) setPos(els.get(tb.id), a);
 
@@ -553,7 +604,7 @@ function attemptSwap(a, b) {
     // En plein combo, un mouvement qui n'aligne rien reste joué (les tuiles
     // gardent leur nouvelle place) et met fin au combo.
     if (G.phase === "combo") {
-      forceSwap(G.grid, a, b);
+      forceSwap(G.grid, a, b, save.diagonal);
       endCombo();
       return;
     }
@@ -707,7 +758,7 @@ async function resolveTurn(game) {
   G.tally = blankTally();
   updateChips();
 
-  if (!findMove(G.grid)) {
+  if (!findMove(G.grid, save.diagonal)) {
     shuffle(G.grid);
     showToast("Mélange !");
     G.grid.forEach((tile) => {
@@ -855,7 +906,8 @@ function pause() {
     title: "Pause",
     actions: [
       { label: "Reprendre", primary: true, run: () => { game.paused = false; if (G === game && G.phase === "idle") scheduleHint(); } },
-      { label: save.sound ? "Couper le son" : "Activer le son", run: () => { save.sound = !save.sound; persist(); game.paused = false; pause(); } },
+      // Les paramètres s'ouvrent par-dessus la pause, puis on y revient.
+      { label: "Paramètres", run: () => showSettings(() => { game.paused = false; pause(); }) },
       { label: "Abandonner la partie", run: goHome },
     ],
   });
