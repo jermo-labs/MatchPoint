@@ -17,7 +17,10 @@ import {
   lockGroups, lockedPoints, clearLocked, collapse, findMove, shuffle, isAdjacent,
   comboMultiplier, COMBO_BONUS,
 } from "./engine.js";
-import { HEROES, heroPower, upgradeCost, teamMaxHp, buildLevel } from "./data.js";
+import { HEROES, heroPower, upgradeCost, teamMaxHp, buildLevel, ARMOR_KEEP } from "./data.js";
+import {
+  ABILITIES, isEnraged, hitEnemy, thornsOf, hurtTeam, upkeep, strike, tickPoison, comboTimeFactor,
+} from "./abilities.js";
 
 const SWAP_MS = 140;
 const POP_MS = 260;
@@ -134,6 +137,8 @@ const els = new Map();   // id de tuile → élément
 const chipEls = {};      // type → puce de héros
 let hintTimer = 0;
 let toastTimer = 0;
+let tipTimer = 0;
+const tipEl = $("#tip");
 
 function show(screen) {
   homeEl.hidden = screen !== "home";
@@ -168,10 +173,11 @@ function showHelp(then) {
       <li><span class="num">1</span><span>Fais glisser une tuile${save.diagonal ? " (y compris en diagonale)" : ""} pour <strong>aligner 3 symboles</strong> identiques ou plus, en ligne ou en colonne.</span></li>
       <li><span class="num">2</span><span>Le chrono démarre et les tuiles alignées restent en place, verrouillées : <strong>enchaîne les combinaisons</strong> en créant d'autres alignements ou en prolongeant un alignement existant. Le combo se termine à la fin du chrono, au premier mouvement qui n'aligne rien, ou quand tu touches le chrono.</span></li>
       <li><span class="num">3</span><span>Chaque combinaison supplémentaire ajoute <strong>+${COMBO_BONUS * 100} %</strong> à tous les effets du tour. <strong>Touche un ennemi</strong> pour le cibler ; son compteur indique dans combien de tours il attaque.</span></li>
+      <li><span class="num">4</span><span>Chaque monstre a une <strong>capacité</strong>, affichée sous son nom (Venin, Cuirasse, Rage…). Touche-le pour lire ce qu'elle fait.</span></li>
       ${row("sword", "<strong>Chevalier</strong> — frappe la cible")}
       ${row("bow", "<strong>Archère</strong> — transperce jusqu'à l'ennemi suivant")}
       ${row("magic", "<strong>Mage</strong> — touche tous les ennemis")}
-      ${row("shield", "<strong>Gardien</strong> — armure qui absorbe les coups")}
+      ${row("shield", "<strong>Gardien</strong> — armure qui absorbe les coups, réduite de moitié à chaque tour")}
       ${row("heart", "<strong>Soigneuse</strong> — rend des points de vie")}
       ${row("coin", "<strong>Trésorier</strong> — pièces pour améliorer tes héros")}
     </ul>`,
@@ -218,6 +224,7 @@ function renderHome() {
   $("#lvl-prev").disabled = pickedLevel <= 1;
   $("#lvl-next").disabled = pickedLevel >= save.level;
   const def = buildLevel(pickedLevel);
+  $("#lvl-zone").textContent = `${def.zone} · Niveau`;
   $("#lvl-info").textContent =
     `${def.waves.length} vagues${def.boss ? " · Boss" : ""} · ${def.reward} pièces`;
 
@@ -362,6 +369,20 @@ function showToast(text) {
   toastEl.hidden = false;
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, 1300);
 }
+/* Bulle d'explication sous les ennemis (capacité du monstre touché). */
+function showTip(html) {
+  clearTimeout(tipTimer);
+  tipEl.innerHTML = html;
+  tipEl.style.top = `${enemiesEl.offsetTop + enemiesEl.offsetHeight + 4}px`;
+  tipEl.hidden = true;
+  void tipEl.offsetWidth; // relance l'animation
+  tipEl.hidden = false;
+  tipTimer = setTimeout(hideTip, 4000);
+}
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipEl.hidden = true;
+}
 function replay(el, cls) {
   el.classList.remove(cls);
   void el.offsetWidth;
@@ -384,6 +405,7 @@ function startGame(level) {
     maxHp,
     armor: 0,
     maxArmor: Math.round(maxHp * 0.4),
+    poison: null,
     grid: createBoard(),
     phase: "busy",
     paused: false,
@@ -398,6 +420,7 @@ function startGame(level) {
   els.clear();
   fxEl.innerHTML = "";
   toastEl.hidden = true;
+  hideTip();
   fitBoard();
 
   chipsEl.innerHTML = "";
@@ -429,7 +452,7 @@ function spawnWave() {
   G.wave++;
   G.enemies = G.def.waves[G.wave].map((e) => ({ ...e, maxHp: e.hp, cdMax: e.cd, cd: e.first }));
   G.target = 0;
-  $("#hud-wave").textContent = `Vague ${G.wave + 1} / ${G.def.waves.length}`;
+  $("#hud-wave").textContent = `${G.def.zone} · Vague ${G.wave + 1} / ${G.def.waves.length}`;
 
   enemiesEl.innerHTML = "";
   G.enemies.forEach((enemy, i) => {
@@ -438,12 +461,18 @@ function spawnWave() {
     card.innerHTML = `<span class="cd">${icon("i-clock")}<b></b></span>
       <span class="face">${enemy.icon}</span>
       <span class="ename">${enemy.name}</span>
+      ${enemy.ability ? `<span class="eab">${ABILITIES[enemy.ability].name}</span>` : ""}
       <span class="ehp"><i></i></span>
       <span class="ehp-num"></span>`;
     card.addEventListener("click", () => {
       if (!G || enemy.hp <= 0) return;
       G.target = i;
       markTarget();
+      // Hors combo, toucher un ennemi rappelle aussi sa capacité.
+      if (enemy.ability && G.phase === "idle") {
+        const { name, text } = ABILITIES[enemy.ability];
+        showTip(`<strong>${enemy.name} · ${name}</strong> ${text}`);
+      }
     });
     enemy.el = card;
     enemiesEl.appendChild(card);
@@ -461,7 +490,9 @@ function updateEnemy(enemy) {
   el.querySelector(".cd b").textContent = enemy.cd;
   el.classList.toggle("soon", enemy.cd <= 1);
   el.classList.toggle("dead", enemy.hp <= 0);
-  el.setAttribute("aria-label", `${enemy.name}, ${enemy.hp} points de vie, attaque dans ${enemy.cd} tour(s)`);
+  el.classList.toggle("fury", isEnraged(enemy));
+  const ability = enemy.ability ? `, capacité ${ABILITIES[enemy.ability].name}` : "";
+  el.setAttribute("aria-label", `${enemy.name}, ${enemy.hp} points de vie, attaque dans ${enemy.cd} tour(s)${ability}`);
 }
 
 /* Ennemi ciblé ; si la cible est morte, on passe au premier survivant. */
@@ -480,7 +511,10 @@ function markTarget() {
 
 function updateTeam() {
   $("#hp-fill").style.transform = `scaleX(${G.hp / G.maxHp})`;
-  $("#hp-text").textContent = `${G.hp} / ${G.maxHp}`;
+  $("#hp-text").textContent = G.poison
+    ? `${G.hp} / ${G.maxHp} · venin ${G.poison.turns}`
+    : `${G.hp} / ${G.maxHp}`;
+  $("#team").classList.toggle("poisoned", !!G.poison);
   $("#armor-num").textContent = G.armor;
   $("#armor").classList.toggle("on", G.armor > 0);
 }
@@ -511,6 +545,7 @@ function updateCombo(bump = false) {
 
 function clearHint() {
   clearTimeout(hintTimer);
+  hideTip();
   for (const el of boardEl.querySelectorAll(".hint")) el.classList.remove("hint");
 }
 function scheduleHint() {
@@ -627,7 +662,9 @@ function attemptSwap(a, b) {
     G.combo.count = 0;
   }
   scoreGroups(groups, SWAP_MS);
-  const time = Math.max(COMBO_MIN, COMBO_START - COMBO_STEP * (G.combo.count - 1));
+  // Un ennemi « Entrave » en vie raccourcit le chrono.
+  const time = Math.max(COMBO_MIN, COMBO_START - COMBO_STEP * (G.combo.count - 1))
+    * comboTimeFactor(G.enemies);
   G.combo.total = time;
   G.combo.remaining = time;
 }
@@ -738,20 +775,33 @@ async function resolveTurn(game) {
   await heroesAct();
   if (gone()) return;
 
-  if (!G.enemies.some((e) => e.hp > 0)) {
-    await sleep(450);
+  const cleared = () => !G.enemies.some((e) => e.hp > 0);
+  if (!cleared()) {
+    // Le venin, puis les ennemis ; un ennemi explosif peut vider la vague.
+    await poisonActs();
     if (gone()) return;
-    if (G.wave + 1 >= G.def.waves.length) return finish(true);
-    spawnWave();
-    showToast(`Vague ${G.wave + 1}`);
-  } else {
-    await enemiesAct();
-    if (gone()) return;
+    if (G.hp > 0) {
+      await enemiesAct();
+      if (gone()) return;
+    }
     if (G.hp <= 0) {
       await sleep(350);
       if (gone()) return;
       return finish(false);
     }
+  }
+  if (cleared()) {
+    await sleep(450);
+    if (gone()) return;
+    if (G.wave + 1 >= G.def.waves.length) return finish(true);
+    spawnWave();
+    showToast(`Vague ${G.wave + 1}`);
+  }
+
+  // L'armure s'érode : elle protège surtout le tour où elle est posée.
+  if (G.armor > 0) {
+    G.armor = Math.floor(G.armor * ARMOR_KEEP);
+    updateTeam();
   }
 
   G.combo.count = 0;
@@ -787,19 +837,17 @@ async function heroesAct() {
     chip.classList.add("fire");
 
     if (type === "sword") {
-      damage(currentTarget(), amount);
+      damage(currentTarget(), type, amount);
       sfx.hit();
     } else if (type === "bow") {
       // Perforant : ce qui dépasse les PV de la cible continue sur l'ennemi suivant.
       let rest = amount;
       for (let enemy = currentTarget(); enemy && rest > 0; enemy = currentTarget()) {
-        const dealt = Math.min(enemy.hp, rest);
-        damage(enemy, dealt);
-        rest -= dealt;
+        rest -= damage(enemy, type, rest);
       }
       sfx.hit();
     } else if (type === "magic") {
-      for (const enemy of G.enemies) if (enemy.hp > 0) damage(enemy, amount);
+      for (const enemy of G.enemies) if (enemy.hp > 0) damage(enemy, type, amount);
       sfx.magic();
     } else if (type === "shield") {
       const gained = Math.min(G.maxArmor, G.armor + amount) - G.armor;
@@ -823,15 +871,44 @@ async function heroesAct() {
   }
 }
 
-function damage(enemy, amount) {
-  enemy.hp = Math.max(0, enemy.hp - amount);
+/* Un héros frappe un ennemi de `raw` dégâts bruts ; les capacités de l'ennemi
+   s'appliquent. Renvoie la part des dégâts bruts consommée (pour la flèche). */
+function damage(enemy, heroType, raw) {
+  const { taken, used, revived } = hitEnemy(enemy, heroType, raw);
   updateEnemy(enemy);
   replay(enemy.el, "hit");
-  floatOver(enemy.el, `-${amount}`, "dmg", -10);
+  floatOver(enemy.el, `-${taken}`, "dmg", -10);
+  if (revived) floatOver(enemy.el, "Revient !", "foe", -40);
+
+  // Épines : le coup du Chevalier lui coûte des PV (jamais le dernier).
+  const thorns = thornsOf(enemy, heroType);
+  if (thorns) {
+    const { dealt } = hurtTeam(G, thorns, { lethal: false });
+    if (dealt) floatOver($("#team"), `-${dealt}`, "hurt", -16);
+  }
   if (enemy.hp <= 0) markTarget();
+  return used;
+}
+
+/* Le venin agit avant que les ennemis ne frappent. */
+async function poisonActs() {
+  const lost = tickPoison(G);
+  if (!lost) return;
+  updateTeam();
+  floatOver($("#team"), `-${lost}`, "venom", -16);
+  sfx.hurt();
+  await sleep(380);
 }
 
 async function enemiesAct() {
+  // Régénérations et soins entre alliés.
+  const heals = upkeep(G.enemies);
+  for (const { enemy, healed } of heals) {
+    updateEnemy(enemy);
+    floatOver(enemy.el, `+${healed}`, "heal", -10);
+  }
+  if (heals.length) await sleep(380);
+
   for (const enemy of G.enemies) {
     if (enemy.hp <= 0) continue;
     enemy.cd--;
@@ -840,21 +917,23 @@ async function enemiesAct() {
 
     replay(enemy.el, "attack");
     await sleep(200);
-    const blocked = Math.min(G.armor, enemy.atk);
-    const dealt = enemy.atk - blocked;
-    G.armor -= blocked;
-    G.hp = Math.max(0, G.hp - dealt);
+    const hit = strike(enemy, G.enemies, G);
     updateTeam();
+    updateCoins();
     sfx.hurt();
-    if (dealt) {
+    if (hit.dealt) {
       replay(gameEl, "hurt");
-      floatOver($("#team"), `-${dealt}`, "hurt", -16);
+      floatOver($("#team"), `-${hit.dealt}`, "hurt", -16);
     } else {
       floatOver($("#armor"), "Bloqué", "shield", -16);
     }
+    if (hit.sundered) floatOver($("#armor"), "Brisée", "shield", -40);
+    if (hit.poisoned) floatOver($("#team"), "Venin", "venom", -40);
+    if (hit.leeched) floatOver(enemy.el, `+${hit.leeched}`, "heal", -10);
+    if (hit.stolen) floatOver($("#hud-coins"), `-${hit.stolen}`, "hurt", 24);
     await sleep(420);
-    enemy.cd = enemy.cdMax;
-    updateEnemy(enemy);
+    updateEnemy(enemy); // compteur reparti, PV soignés, ou disparition (explosif)
+    if (hit.exploded) markTarget();
     if (G.hp <= 0) return;
   }
   await sleep(120);

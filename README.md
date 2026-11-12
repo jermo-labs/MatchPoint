@@ -26,7 +26,7 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
   | Épée     | Chevalier | Frappe l'ennemi ciblé                   |
   | Flèche   | Archère   | Transperce jusqu'à l'ennemi suivant     |
   | Étoile   | Mage      | Touche tous les ennemis                 |
-  | Bouclier | Gardien   | Armure qui absorbe les coups            |
+  | Bouclier | Gardien   | Armure, réduite de moitié à chaque tour |
   | Cœur     | Soigneuse | Rend des points de vie                  |
   | Pièce    | Trésorier | Pièces pour améliorer les héros         |
 
@@ -34,8 +34,37 @@ dépendance ni étape de build : HTML, CSS et JavaScript (modules ES).
   tuile peut aussi être échangée avec une voisine en coin. Les alignements
   restent en ligne ou en colonne.
 - Touche un ennemi pour le cibler. Son compteur indique dans combien de tours il
-  attaque. Chaque niveau enchaîne plusieurs vagues ; un boss tous les 5 niveaux.
+  attaque. Chaque niveau enchaîne plusieurs vagues.
+- Le monde compte 8 zones de 5 niveaux (Forêt, Marais, Crypte, Désert, Rivage,
+  Montagne, Volcan, Citadelle), chacune avec ses 5 monstres et son boss au
+  5e niveau. Après la Citadelle, on repart de la Forêt avec des ennemis plus
+  forts.
+- Chaque monstre a une capacité, affichée sous son nom ; le toucher hors combo
+  en rappelle l'effet :
+
+  | Capacité     | Effet                                                        |
+  |--------------|--------------------------------------------------------------|
+  | Volant       | Le Chevalier ne lui inflige que 50 % de ses dégâts           |
+  | Cuirasse     | Subit 40 % de dégâts en moins                                |
+  | Immortel     | Revient une fois à la vie avec 30 % de ses PV                |
+  | Régénération | Récupère 8 % de ses PV à chaque tour                         |
+  | Guérisseur   | Rend 10 % de leurs PV à ses alliés à chaque tour             |
+  | Rage         | Attaque +50 % sous la moitié de ses PV                       |
+  | Meute        | Attaque +25 % par autre ennemi en vie                        |
+  | Frénésie     | Attaque plus vite après chaque coup                          |
+  | Spectral     | Ses coups traversent l'armure                                |
+  | Brise-armure | Détruit toute l'armure avant de frapper                      |
+  | Venin        | S'il blesse : perte de PV pendant 2 tours, malgré l'armure   |
+  | Vampirisme   | Se soigne des dégâts qu'il inflige                           |
+  | Voleur       | S'il blesse : vole 25 % des pièces récoltées dans la partie  |
+  | Épines       | Chaque coup du Chevalier renvoie des dégâts à l'équipe       |
+  | Explosif     | Disparaît en attaquant                                       |
+  | Entrave      | Tant qu'il vit, le chrono de combo est raccourci de 25 %     |
+
 - Les pièces gagnées servent à améliorer les héros depuis l'accueil.
+- Les niveaux sont sans fin. Les ennemis gagnent +12 % de PV et +7 % d'attaque
+  par niveau, en croissance composée : tôt ou tard il faut améliorer ses héros,
+  quitte à rejouer d'anciens niveaux.
 
 La progression est enregistrée sur l'appareil (`localStorage`).
 
@@ -80,7 +109,8 @@ Réglage requis sur le dépôt : Settings → Pages → Source : « GitHub Actio
 npm test
 ```
 
-Les tests couvrent le moteur de grille (`js/engine.js`).
+Les tests couvrent le moteur de grille (`js/engine.js`), la génération des
+niveaux (`js/data.js`) et les capacités des monstres (`js/abilities.js`).
 
 ## Organisation
 
@@ -89,7 +119,8 @@ Les tests couvrent le moteur de grille (`js/engine.js`).
 | `index.html`           | Page unique : accueil, partie, fenêtres                     |
 | `css/style.css`        | Mise en page et animations                                  |
 | `js/engine.js`         | Moteur match-3 pur (alignements, échanges, chute, mélange)  |
-| `js/data.js`           | Héros, bestiaire, génération des niveaux                    |
+| `js/data.js`           | Héros, zones, bestiaire, génération des niveaux             |
+| `js/abilities.js`      | Capacités des monstres (logique pure)                       |
 | `js/main.js`           | Interface, saisie tactile, déroulement des combats, sons    |
 | `sw.js`                | Service worker (mode hors-ligne)                            |
 | `tools/serve.mjs`      | Serveur statique de développement                           |
